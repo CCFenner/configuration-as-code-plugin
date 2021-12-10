@@ -10,11 +10,16 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.logging.Logger;
 import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang.StringUtils;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.composer.Composer;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -81,7 +86,7 @@ public final class YamlUtils {
         Object src = source.source;
         if (src instanceof String) {
             final URL url = URI.create((String) src).toURL();
-            return new InputStreamReader(url.openStream(), UTF_8);
+            return new InputStreamReader(addAuthInfo(url.openConnection()).getInputStream(), UTF_8);
         } else if (src instanceof InputStream) {
             return new InputStreamReader((InputStream) src, UTF_8);
         } else if (src instanceof HttpServletRequest) {
@@ -90,6 +95,24 @@ public final class YamlUtils {
             return Files.newBufferedReader((Path) src);
         }
         throw new IOException(String.format("Unknown %s", source));
+    }
+
+    static URLConnection addAuthInfo(URLConnection connection) {
+        String token = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_TOKEN_ENV);
+        if (StringUtils.isNotBlank(token)) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+            return connection;
+        }
+
+        String user = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_USER_ENV);
+        String password = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_PASSWORD_ENV);
+        if (StringUtils.isNotBlank(user) && StringUtils.isNotBlank(password)) {
+            String encoded = Base64.getEncoder().encodeToString((user + ":" + password).getBytes(Charset.forName("UTF-8")));
+            connection.setRequestProperty("Authorization", "Basic " + encoded);
+            return connection;
+        }
+
+        return connection;
     }
 
     /**
